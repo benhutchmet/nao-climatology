@@ -11,6 +11,12 @@ sfc_wind='si10'
 tas='t2m'
 psl='var151'
 
+sfc_wind_label="10-metre wind speed"
+sfc_wind_units = 'm s\u207b\u00b9'
+
+tas_label="2-metre temperature"
+tas_units="K"
+
 # define the azores and iceland grids
 azores_grid = {
     'lon1': 332,

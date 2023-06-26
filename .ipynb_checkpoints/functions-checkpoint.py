@@ -7,10 +7,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
+import cartopy.util as cutil
 from scipy.stats import pearsonr, mstats, ttest_rel, ttest_ind, ttest_1samp
 from sklearn.utils import resample
 # import the datetime library
-from datetime import datetime
+import datetime
 
 # Import dictionaries
 import dictionaries as dic
@@ -84,11 +85,6 @@ def NAO_index(psl_data, azores_grid, iceland_grid):
 
         print("yearly mean", yearly_mean)
 
-        # Assign datetime objects to each year in the dataset
-        # yearly_mean = yearly_mean.assign_coords(time=[f"{year}-12-01" for year in yearly_mean.year.values])
-
-        # print("yearly mean", yearly_mean)
-        
         # Extract the psl values for the Azores grid box
         azores_psl = yearly_mean.sel(
             lon=slice(azores_grid['lon1'], azores_grid['lon2']),
@@ -212,26 +208,34 @@ def select_anomaly_time_series(pos_anomaly_indices, pos_anomaly_dates, neg_anoma
     
     # Calculate the overall time-mean of the other variable
     time_mean = other_variable_data.mean(dim='time')
+
+    # Shift the time series of the other variable back by -4
+    # In the same way as the NAO
+    # to give the same winters
+    other_variable_data = other_variable_data.roll(time=-4)
+
+    # group by year and take the mean
+    other_variable_data = other_variable_data.groupby('time.year').mean(dim='time')
+
+    print("positive NAO anom indicies", pos_anomaly_indices)
+    print("negative NAO anom indicies", neg_anomaly_indices)
     
     # Select the time series of the other variable using the positive and negative anomaly indices/dates
-    pos_anomaly_time_series = other_variable_data.sel(time=pos_anomaly_indices)
-    neg_anomaly_time_series = other_variable_data.sel(time=neg_anomaly_indices)
+    pos_anomaly_time_series = other_variable_data.sel(year=pos_anomaly_indices)
+    neg_anomaly_time_series = other_variable_data.sel(year=neg_anomaly_indices)
     
     # Remove the overall time-mean from the positive and negative time series to calculate the anomalies
     pos_anomaly_time_series = pos_anomaly_time_series - time_mean
     neg_anomaly_time_series = neg_anomaly_time_series - time_mean
     
     # Assign the corresponding dates to the time series
-    pos_anomaly_time_series['time'] = pos_anomaly_dates
-    neg_anomaly_time_series['time'] = neg_anomaly_dates
+    pos_anomaly_time_series['year'] = pos_anomaly_indices
+    neg_anomaly_time_series['year'] = neg_anomaly_indices
     
     return pos_anomaly_time_series, neg_anomaly_time_series
 
-import numpy as np
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.util as cutil
-
+# Constrain the anomaly time series to the North Atlantic region
+# and take the time mean
 def constrain_to_north_atlantic(anomaly_time_series, north_atlantic_grid):
     """
     Constrain the anomaly time series to the North Atlantic region and take the time mean.
@@ -277,11 +281,9 @@ def constrain_to_north_atlantic(anomaly_time_series, north_atlantic_grid):
         ], dim='latitude')
 
     # Take the time mean of the constrained time series
-    time_mean_constrained_time_series = constrained_time_series.mean(dim='time')
+    time_mean_constrained_time_series = constrained_time_series.mean(dim='year')
 
     return time_mean_constrained_time_series
-
-
 
 
 # Plot the data
@@ -319,12 +321,9 @@ def plot_time_mean_constrained(time_mean_constrained, variable):
     plt.show()
 
 
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-
 # Plot the data as 2 subplots with a constant colourbar
 # This needs to be tested
-def plot_time_mean_constrained(time_mean_constrained_pos, time_mean_constrained_neg, variable):
+def plot_time_mean_constrained_subplots(time_mean_constrained_pos, time_mean_constrained_neg, variable_name, variable_units):
     """
     Plot the time-mean-constrained time series on a map using cartopy.
 
@@ -334,29 +333,41 @@ def plot_time_mean_constrained(time_mean_constrained_pos, time_mean_constrained_
         Time-mean-constrained time series of the positive NAO anomalies of the variable.
     time_mean_constrained_neg : xarray DataArray
         Time-mean-constrained time series of the negative NAO anomalies of the variable.
-    variable : str
+    variable_name : str
         Name of the variable to use for the colorbar label.
+    variable_units : str
+        Units of the variable to use for the colorbar label.
     """
     
     # Set up the figure and axes
     fig, (ax1, ax2) = plt.subplots(ncols=2, figsize=(12, 6), subplot_kw={'projection': ccrs.PlateCarree()})
-    
+
+    # Calculate the minimum and maximum values of the data
+    data_min = np.min([time_mean_constrained_pos.min(), time_mean_constrained_neg.min()])
+    data_max = np.max([time_mean_constrained_pos.max(), time_mean_constrained_neg.max()])
+
     # Plot the positive anomalies on the left
-    pos_plot = time_mean_constrained_pos.plot(ax=ax1, cmap='RdBu_r', vmin=-2, vmax=2, add_colorbar=False)
-    ax1.set_title('Positive NAO Anomalies')
+    c1 = ax1.contourf(time_mean_constrained_pos.longitude, time_mean_constrained_pos.latitude,
+                      time_mean_constrained_pos, transform=ccrs.PlateCarree(), cmap='bwr', vmin=data_min, vmax=data_max)
+    ax1.text(0.05, 0.95, 'NAO+', transform=ax1.transAxes, fontsize=14, fontweight='bold', va='top', bbox=dict(facecolor='white', alpha=0.8))
     
     # Plot the negative anomalies on the right
-    neg_plot = time_mean_constrained_neg.plot(ax=ax2, cmap='RdBu_r', vmin=-2, vmax=2, add_colorbar=False)
-    ax2.set_title('Negative NAO Anomalies')
+    c2 = ax2.contourf(time_mean_constrained_neg.longitude, time_mean_constrained_neg.latitude,
+                      time_mean_constrained_neg, transform=ccrs.PlateCarree(), cmap='bwr', vmin=data_min, vmax=data_max)
+    ax2.text(0.05, 0.95, 'NAO-', transform=ax2.transAxes, fontsize=14, fontweight='bold', va='top', bbox=dict(facecolor='white', alpha=0.8))
     
     # Add a common colorbar
-    cbar = fig.colorbar(pos_plot, ax=[ax1, ax2], orientation='horizontal', pad=0.05)
-    cbar.set_label(variable)
+    cbar = fig.colorbar(c1, ax=[ax1, ax2], orientation='horizontal', pad=0.05)
+    cbar.set_label(f"{variable_name} anomalies ({variable_units})")
     
     # Add coastlines and gridlines
     for ax in [ax1, ax2]:
         ax.coastlines()
-        ax.gridlines()
-    
+
+    # Save the plot with the filename including the variable name and the date and time
+    now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = os.path.join("plots", f"{variable_name}_anomalies_{now}.png")
+    plt.savefig(filename)
+
     # Show the plot
     plt.show()
