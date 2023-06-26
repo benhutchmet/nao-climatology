@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
+import cartopy.util as cutil
 from scipy.stats import pearsonr, mstats, ttest_rel, ttest_ind, ttest_1samp
 from sklearn.utils import resample
 # import the datetime library
@@ -212,6 +213,14 @@ def select_anomaly_time_series(pos_anomaly_indices, pos_anomaly_dates, neg_anoma
     
     # Calculate the overall time-mean of the other variable
     time_mean = other_variable_data.mean(dim='time')
+
+    # Shift the time series of the other variable back by -4
+    # In the same way as the NAO
+    # to give the same winters
+    other_variable_data = other_variable_data.roll(time=-4)
+
+    # group by year and take the mean
+    other_variable_data = other_variable_data.groupby('time.year').mean(dim='time')
     
     # Select the time series of the other variable using the positive and negative anomaly indices/dates
     pos_anomaly_time_series = other_variable_data.sel(time=pos_anomaly_indices)
@@ -227,11 +236,8 @@ def select_anomaly_time_series(pos_anomaly_indices, pos_anomaly_dates, neg_anoma
     
     return pos_anomaly_time_series, neg_anomaly_time_series
 
-import numpy as np
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.util as cutil
-
+# Constrain the anomaly time series to the North Atlantic region
+# and take the time mean
 def constrain_to_north_atlantic(anomaly_time_series, north_atlantic_grid):
     """
     Constrain the anomaly time series to the North Atlantic region and take the time mean.
@@ -282,8 +288,6 @@ def constrain_to_north_atlantic(anomaly_time_series, north_atlantic_grid):
     return time_mean_constrained_time_series
 
 
-
-
 # Plot the data
 def plot_time_mean_constrained(time_mean_constrained, variable):
     """
@@ -318,9 +322,6 @@ def plot_time_mean_constrained(time_mean_constrained, variable):
     # Show the plot
     plt.show()
 
-
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
 
 # Plot the data as 2 subplots with a constant colourbar
 # This needs to be tested
