@@ -50,9 +50,12 @@ def test_constrain(psl_data):
     print(azores_psl.compute())
     
 
+# New implementation of the function to calculate the NAO index
+# Calculates NAO by season
+# Seems to be working
 def NAO_index(psl_data, azores_grid, iceland_grid):
     """
-    This function calculates the normalized NAO index.
+    This function calculates the normalized NAO index as the average of December of the current year and January, February, and March of the next year.
     
     Parameters
     ----------
@@ -70,29 +73,41 @@ def NAO_index(psl_data, azores_grid, iceland_grid):
     """
     
     try:
+
+        # Shift the time index back by 4 months
+        shifted_data = psl_data.roll(time=-4)
+
+        print("shifted data", shifted_data)
+        
+        # Group the data by year and calculate the mean
+        yearly_mean = shifted_data.groupby('time.year').mean(dim='time')
+
+        print("yearly mean", yearly_mean)
+
+        # Assign datetime objects to each year in the dataset
+        # yearly_mean = yearly_mean.assign_coords(time=[f"{year}-12-01" for year in yearly_mean.year.values])
+
+        # print("yearly mean", yearly_mean)
+        
         # Extract the psl values for the Azores grid box
-        azores_psl = psl_data.sel(
+        azores_psl = yearly_mean.sel(
             lon=slice(azores_grid['lon1'], azores_grid['lon2']),
             lat=slice(azores_grid['lat1'], azores_grid['lat2'])
         )
 
-        print(azores_psl.values)
-        
         # Extract the psl values for the Iceland grid box
-        iceland_psl = psl_data.sel(
+        iceland_psl = yearly_mean.sel(
             lon=slice(iceland_grid['lon1'], iceland_grid['lon2']),
             lat=slice(iceland_grid['lat1'], iceland_grid['lat2'])
         )
 
-        print(iceland_psl.values)
-        
         # Calculate the NAO index as the difference between Azores and Iceland
         NAO_index = azores_psl.mean(dim=("lon", "lat")) - iceland_psl.mean(dim=("lon", "lat"))
         
         # Print the actual values of NAO_index, NAO_index.mean(), and NAO_index.std()
-        print("NAO_index values:", NAO_index.values)
-        print("NAO_index mean:", NAO_index.mean().values)
-        print("NAO_index_sd:", NAO_index.std().values)
+        # print("NAO_index values:", NAO_index.values)
+        # print("NAO_index mean:", NAO_index.mean().values)
+        # print("NAO_index_sd:", NAO_index.std().values)
         
         # Normalize the NAO index
         norm_NAO_index = (NAO_index - NAO_index.mean()) / NAO_index.std()
@@ -157,8 +172,8 @@ def select_NAO_anomalies(norm_NAO_index):
         raise ValueError("No negative anomalies found.")
     
     # Get the indices of the selected positive and negative anomalies
-    pos_anomaly_indices = pos_anomalies.time.values
-    neg_anomaly_indices = neg_anomalies.time.values
+    pos_anomaly_indices = pos_anomalies.year.values
+    neg_anomaly_indices = neg_anomalies.year.values
     
     # Convert the indices to dates for positive and negative anomalies
     pos_anomaly_dates = pd.to_datetime(pos_anomaly_indices)
@@ -168,9 +183,11 @@ def select_NAO_anomalies(norm_NAO_index):
 
 
 # Select the time series of the other variable with only the selected positive and negative anomaly indices/dates
+# This needs to be tested
 def select_anomaly_time_series(pos_anomaly_indices, pos_anomaly_dates, neg_anomaly_indices, neg_anomaly_dates, other_variable_data):
     """
     Select time series of the other variable with only the selected positive and negative anomaly indices/dates.
+    Calculate the anomalies of the positive and negative time series by removing the overall time-mean of the other variable.
     
     Parameters
     ----------
@@ -188,14 +205,21 @@ def select_anomaly_time_series(pos_anomaly_indices, pos_anomaly_dates, neg_anoma
     Returns
     -------
     pos_anomaly_time_series : xarray DataArray
-        The time series of the other variable with only the selected positive anomaly indices/dates.
+        The time series of the other variable with only the selected positive anomaly indices/dates, with the overall time-mean removed.
     neg_anomaly_time_series : xarray DataArray
-        The time series of the other variable with only the selected negative anomaly indices/dates.
+        The time series of the other variable with only the selected negative anomaly indices/dates, with the overall time-mean removed.
     """
+    
+    # Calculate the overall time-mean of the other variable
+    time_mean = other_variable_data.mean(dim='time')
     
     # Select the time series of the other variable using the positive and negative anomaly indices/dates
     pos_anomaly_time_series = other_variable_data.sel(time=pos_anomaly_indices)
     neg_anomaly_time_series = other_variable_data.sel(time=neg_anomaly_indices)
+    
+    # Remove the overall time-mean from the positive and negative time series to calculate the anomalies
+    pos_anomaly_time_series = pos_anomaly_time_series - time_mean
+    neg_anomaly_time_series = neg_anomaly_time_series - time_mean
     
     # Assign the corresponding dates to the time series
     pos_anomaly_time_series['time'] = pos_anomaly_dates
@@ -290,6 +314,49 @@ def plot_time_mean_constrained(time_mean_constrained, variable):
     
     # Set the title
     ax.set_title('Time-Mean-Constrained Time Series')
+    
+    # Show the plot
+    plt.show()
+
+
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+
+# Plot the data as 2 subplots with a constant colourbar
+# This needs to be tested
+def plot_time_mean_constrained(time_mean_constrained_pos, time_mean_constrained_neg, variable):
+    """
+    Plot the time-mean-constrained time series on a map using cartopy.
+
+    Parameters
+    ----------
+    time_mean_constrained_pos : xarray DataArray
+        Time-mean-constrained time series of the positive NAO anomalies of the variable.
+    time_mean_constrained_neg : xarray DataArray
+        Time-mean-constrained time series of the negative NAO anomalies of the variable.
+    variable : str
+        Name of the variable to use for the colorbar label.
+    """
+    
+    # Set up the figure and axes
+    fig, (ax1, ax2) = plt.subplots(ncols=2, figsize=(12, 6), subplot_kw={'projection': ccrs.PlateCarree()})
+    
+    # Plot the positive anomalies on the left
+    pos_plot = time_mean_constrained_pos.plot(ax=ax1, cmap='RdBu_r', vmin=-2, vmax=2, add_colorbar=False)
+    ax1.set_title('Positive NAO Anomalies')
+    
+    # Plot the negative anomalies on the right
+    neg_plot = time_mean_constrained_neg.plot(ax=ax2, cmap='RdBu_r', vmin=-2, vmax=2, add_colorbar=False)
+    ax2.set_title('Negative NAO Anomalies')
+    
+    # Add a common colorbar
+    cbar = fig.colorbar(pos_plot, ax=[ax1, ax2], orientation='horizontal', pad=0.05)
+    cbar.set_label(variable)
+    
+    # Add coastlines and gridlines
+    for ax in [ax1, ax2]:
+        ax.coastlines()
+        ax.gridlines()
     
     # Show the plot
     plt.show()

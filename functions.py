@@ -52,7 +52,7 @@ def test_constrain(psl_data):
 
 # New implementation of the function to calculate the NAO index
 # Calculates NAO by season
-# Needs to be tested
+# Seems to be working
 def NAO_index(psl_data, azores_grid, iceland_grid):
     """
     This function calculates the normalized NAO index as the average of December of the current year and January, February, and March of the next year.
@@ -73,20 +73,30 @@ def NAO_index(psl_data, azores_grid, iceland_grid):
     """
     
     try:
-        # Select the data for December of the current year and January, February, and March of the next year
-        winter_data = psl_data.sel(time=((psl_data['time.month'] == 12) & (psl_data['time.year'] == psl_data['time.year'].min())) | ((psl_data['time.month'] >= 1) & (psl_data['time.month'] <= 3) & (psl_data['time.year'] == psl_data['time.year'].min()+1)))
 
-        # Mean for each year of the winter data
-        winter_data_mean = winter_data.groupby(winter_data.index.year).mean()
+        # Shift the time index back by 4 months
+        shifted_data = psl_data.roll(time=-4)
+
+        print("shifted data", shifted_data)
+        
+        # Group the data by year and calculate the mean
+        yearly_mean = shifted_data.groupby('time.year').mean(dim='time')
+
+        print("yearly mean", yearly_mean)
+
+        # Assign datetime objects to each year in the dataset
+        # yearly_mean = yearly_mean.assign_coords(time=[f"{year}-12-01" for year in yearly_mean.year.values])
+
+        # print("yearly mean", yearly_mean)
         
         # Extract the psl values for the Azores grid box
-        azores_psl = winter_data_mean.sel(
+        azores_psl = yearly_mean.sel(
             lon=slice(azores_grid['lon1'], azores_grid['lon2']),
             lat=slice(azores_grid['lat1'], azores_grid['lat2'])
         )
 
         # Extract the psl values for the Iceland grid box
-        iceland_psl = winter_data_mean.sel(
+        iceland_psl = yearly_mean.sel(
             lon=slice(iceland_grid['lon1'], iceland_grid['lon2']),
             lat=slice(iceland_grid['lat1'], iceland_grid['lat2'])
         )
@@ -95,9 +105,9 @@ def NAO_index(psl_data, azores_grid, iceland_grid):
         NAO_index = azores_psl.mean(dim=("lon", "lat")) - iceland_psl.mean(dim=("lon", "lat"))
         
         # Print the actual values of NAO_index, NAO_index.mean(), and NAO_index.std()
-        print("NAO_index values:", NAO_index.values)
-        print("NAO_index mean:", NAO_index.mean().values)
-        print("NAO_index_sd:", NAO_index.std().values)
+        # print("NAO_index values:", NAO_index.values)
+        # print("NAO_index mean:", NAO_index.mean().values)
+        # print("NAO_index_sd:", NAO_index.std().values)
         
         # Normalize the NAO index
         norm_NAO_index = (NAO_index - NAO_index.mean()) / NAO_index.std()
@@ -162,8 +172,8 @@ def select_NAO_anomalies(norm_NAO_index):
         raise ValueError("No negative anomalies found.")
     
     # Get the indices of the selected positive and negative anomalies
-    pos_anomaly_indices = pos_anomalies.time.values
-    neg_anomaly_indices = neg_anomalies.time.values
+    pos_anomaly_indices = pos_anomalies.year.values
+    neg_anomaly_indices = neg_anomalies.year.values
     
     # Convert the indices to dates for positive and negative anomalies
     pos_anomaly_dates = pd.to_datetime(pos_anomaly_indices)
